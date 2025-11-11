@@ -105,7 +105,7 @@ const DataVisualization = () => {
 
     const applyLimit = () => {
         const num = Number(topKInput);
-        if (!isNaN(num) && num > 0 && num <= 300) {
+        if (!isNaN(num) && num > 0 && num <= 3000) {
             setTopK(num);
         } else {
             setTopKInput('100');

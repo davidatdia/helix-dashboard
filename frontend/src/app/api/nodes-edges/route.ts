@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MAX_LIMIT = 300;
+const MAX_LIMIT = 3000;
 
 const host = process.env.DOCKER_HOST_INTERNAL || process.env.HELIX_HOST || 'localhost';
 const port = process.env.HELIX_PORT || 6969;
