@@ -131,7 +131,15 @@ export const fetchNodeDetails = async (nodeId: string): Promise<NodeDetailsRespo
     if (!response.ok) {
         throw new Error(`Failed to fetch node details: ${response.status}`);
     }
-    return response.json();
+    const data: NodeDetailsResponse = await response.json();
+    // Normalize IDs in the response
+    if (data.node) {
+        data.node = normalizeNode(data.node);
+    }
+    if (data.data) {
+        data.data = normalizeNode(data.data);
+    }
+    return data;
 };
 
 export const fetchNodeDetailsForNodes = async (
