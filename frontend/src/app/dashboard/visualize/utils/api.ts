@@ -8,6 +8,63 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
+// ============================================================================
+// ID Normalization
+// ============================================================================
+// The HelixDB backend returns IDs in two formats:
+// 1. Numeric strings from /nodes-edges: "41271497485366718861022651888053781766"
+// 2. UUID strings from /node-connections: "1f0c99ed-da7a-6901-a529-010203040506"
+//
+// These represent the same underlying entity (numeric is the decimal
+// representation of the 128-bit UUID). We normalize to UUID format at the
+// API boundary for consistency throughout the application.
+// ============================================================================
+
+export const normalizeId = (id: unknown): string => {
+    const str = String(id);
+    
+    // Already a UUID format (8-4-4-4-12 pattern)
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) {
+        return str.toLowerCase();
+    }
+    
+    // Check if it's a large numeric string (potential decimal representation of UUID)
+    // UUIDs are 128-bit, so decimal representation is up to 39 digits
+    if (/^\d{20,}$/.test(str)) {
+        try {
+            // Convert decimal to hex, then format as UUID
+            const bigInt = BigInt(str);
+            const hex = bigInt.toString(16).padStart(32, '0');
+            const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+            return uuid.toLowerCase();
+        } catch {
+            // If conversion fails, fall back to string
+            return str;
+        }
+    }
+    
+    return str;
+};
+
+// Normalize a node's ID
+const normalizeNode = (node: DataItem): DataItem => {
+    const id = normalizeId(node.id);
+    return { ...node, id };
+};
+
+// Normalize edge endpoints
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const normalizeEdge = (edge: any): any => {
+    if (!edge) return edge;
+    return {
+        ...edge,
+        from_node: edge.from_node ? normalizeId(edge.from_node) : edge.from_node,
+        to_node: edge.to_node ? normalizeId(edge.to_node) : edge.to_node,
+        from: edge.from ? normalizeId(edge.from) : edge.from,
+        to: edge.to ? normalizeId(edge.to) : edge.to,
+    };
+};
+
 export const fetchSchema = async (): Promise<SchemaInfo> => {
     const response = await fetch(`${API_BASE}/api/schema`);
     const data: SchemaInfo = await response.json();
@@ -26,7 +83,12 @@ export const fetchNodesByLabel = async (
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-    return response.json();
+    const data = await response.json();
+    // Normalize node IDs at the API boundary
+    return {
+        ...data,
+        nodes: (data.nodes || []).map(normalizeNode)
+    };
 };
 
 export const fetchNodesAndEdges = async (limit?: number): Promise<NodesEdgesResponse> => {
@@ -35,7 +97,13 @@ export const fetchNodesAndEdges = async (limit?: number): Promise<NodesEdgesResp
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-    return response.json();
+    const data: NodesEdgesResponse = await response.json();
+    // Normalize node IDs at the API boundary
+    if (data.data) {
+        data.data.nodes = (data.data.nodes || []).map(normalizeNode);
+        data.data.edges = (data.data.edges || []).map(normalizeEdge);
+    }
+    return data;
 };
 
 export const fetchNodeConnections = async (nodeId: string): Promise<ConnectionData> => {
@@ -46,7 +114,14 @@ export const fetchNodeConnections = async (nodeId: string): Promise<ConnectionDa
         throw new Error(`Failed to fetch connections: ${response.status}`);
     }
     const connectionsText = await response.text();
-    return JSON.parse(connectionsText);
+    const data: ConnectionData = JSON.parse(connectionsText);
+    // Normalize all IDs at the API boundary
+    return {
+        ...data,
+        connected_nodes: (data.connected_nodes || []).map(normalizeNode),
+        incoming_edges: (data.incoming_edges || []).map(normalizeEdge),
+        outgoing_edges: (data.outgoing_edges || []).map(normalizeEdge),
+    };
 };
 
 export const fetchNodeDetails = async (nodeId: string): Promise<NodeDetailsResponse> => {
